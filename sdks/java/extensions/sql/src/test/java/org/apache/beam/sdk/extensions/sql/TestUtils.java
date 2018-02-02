@@ -20,16 +20,20 @@ package org.apache.beam.sdk.extensions.sql;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.common.collect.Lists;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.BeamRecord;
 import org.apache.beam.sdk.values.BeamRecordType;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionTuple;
+import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.Instant;
 
 /**
@@ -166,6 +170,7 @@ public class TestUtils {
     private List<BeamRecord> rows;
     private String timestampField;
     private Pipeline pipeline;
+    private String name;
 
     public PCollectionBuilder withRowType(BeamRecordType type) {
       this.type = type;
@@ -187,6 +192,14 @@ public class TestUtils {
 
     public PCollectionBuilder inPipeline(Pipeline pipeline) {
       this.pipeline = pipeline;
+      return this;
+    }
+
+    /**
+     * Name of the TestStream PTransform stage.
+     */
+    public PCollectionBuilder withName(String name) {
+      this.name = name;
       return this;
     }
 
@@ -215,9 +228,31 @@ public class TestUtils {
         values = values.addElements(row);
       }
 
-      return PBegin
-          .in(pipeline)
-          .apply("unboundedPCollection", values.advanceWatermarkToInfinity());
+      return name == null
+          ? PBegin.in(pipeline).apply(values.advanceWatermarkToInfinity())
+          : PBegin.in(pipeline).apply(name, values.advanceWatermarkToInfinity());
+    }
+
+    /**
+     * Builds a bounded {@link PCollection} in {@link Pipeline}
+     * set by {@link #inPipeline(Pipeline)}.
+     *
+     * <p>If timestamp field was set with {@link #withTimestampField(String)} then
+     * watermark will be advanced to the values from that field.
+     */
+    public PCollection<BeamRecord> buildBounded() {
+      checkArgument(pipeline != null);
+      checkArgument(rows.size() > 0);
+
+      if (type == null) {
+        type = rows.get(0).getDataType();
+      }
+
+      Create.Values<BeamRecord> values = Create.of(rows).withCoder(type.getRecordCoder());
+
+      return name == null
+          ? PBegin.in(pipeline).apply(values)
+          : PBegin.in(pipeline).apply(name, values);
     }
   }
 
@@ -269,5 +304,33 @@ public class TestUtils {
       rows.add(new BeamRecord(type, args.subList(i, i + fieldCount)));
     }
     return rows;
+  }
+
+  /**
+   * Builds a PCollectionTuple.
+   *
+   * <p>e.g.
+   *
+   * <pre>{@code
+   *   pCollectionTupleOf(
+   *       "pCollection1_Tag", pCollection1,
+   *       "pCollection2_Tag", pCollection2,
+   *       ...
+   *   )
+   * }</pre>
+   */
+  public static PCollectionTuple pCollectionTupleOf(Object ... args) {
+    PCollectionTuple pCollectionTuple = null;
+
+    for (List<Object> taggedPCollection : Lists.partition(Arrays.asList(args), 2)) {
+      TupleTag<BeamRecord> tag = new TupleTag<>((String) taggedPCollection.get(0));
+      PCollection<BeamRecord> pCollection = (PCollection<BeamRecord>) taggedPCollection.get(1);
+
+      pCollectionTuple = pCollectionTuple == null
+          ? PCollectionTuple.of(tag, pCollection)
+          : pCollectionTuple.and(tag, pCollection);
+    }
+
+    return pCollectionTuple;
   }
 }

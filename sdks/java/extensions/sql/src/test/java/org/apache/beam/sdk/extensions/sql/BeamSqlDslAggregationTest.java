@@ -447,7 +447,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     };
 
     PCollection<BeamRecord> input =
-        createTestPCollection(type, rows, "f_timestamp")
+        unboundedPCollection("unbounded2", type, rows, "f_timestamp")
             .apply(Window
                        .<BeamRecord>into(new GlobalWindows())
                        .triggering(Repeatedly.forever(AfterPane.elementCountAtLeast(2)))
@@ -490,7 +490,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     };
 
     PCollection<BeamRecord> input =
-        createTestPCollection(type, rows, "f_timestamp")
+        unboundedPCollection("unbounded1", type, rows, "f_timestamp")
             .apply(Window
                        .<BeamRecord>into(
                            FixedWindows.of(Duration.standardSeconds(3)))
@@ -524,7 +524,8 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
             .getRows();
   }
 
-  private PCollection<BeamRecord> createTestPCollection(
+  private PCollection<BeamRecord> unboundedPCollection(
+      String name,
       BeamRecordSqlType type,
       Object[] rows,
       String timestampField) {
@@ -535,6 +536,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
             .getPCollectionBuilder()
             .inPipeline(pipeline)
             .withTimestampField(timestampField)
+            .withName(name)
             .buildUnbounded();
   }
 }
