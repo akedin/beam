@@ -115,6 +115,15 @@ public class OutputAndTimeBoundedSplittableProcessElementInvokerTest {
                   PaneInfo pane) {}
 
               @Override
+              public void outputRetraction(
+                  String output,
+                  Instant timestamp,
+                  Collection<? extends BoundedWindow> windows,
+                  PaneInfo pane) {
+                throw new UnsupportedOperationException("Retractions are not supported here");
+              }
+
+              @Override
               public <AdditionalOutputT> void outputWindowedValue(
                   TupleTag<AdditionalOutputT> tag,
                   AdditionalOutputT output,

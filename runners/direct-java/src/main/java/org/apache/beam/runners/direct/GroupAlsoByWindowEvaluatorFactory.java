@@ -28,7 +28,6 @@ import org.apache.beam.runners.core.GroupByKeyViaGroupByKeyOnly;
 import org.apache.beam.runners.core.KeyedWorkItem;
 import org.apache.beam.runners.core.OutputWindowedValue;
 import org.apache.beam.runners.core.ReduceFnRunner;
-import org.apache.beam.runners.core.SystemReduceFn;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.UnsupportedSideInputReader;
 import org.apache.beam.runners.core.construction.TriggerTranslation;
@@ -111,7 +110,7 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
     private final Collection<UncommittedBundle<?>> outputBundles;
     private final ImmutableList.Builder<WindowedValue<KeyedWorkItem<K, V>>> unprocessedElements;
 
-    private final SystemReduceFn<K, V, Iterable<V>, Iterable<V>, BoundedWindow> reduceFn;
+    private final RetractingReduceFn<K, V, BoundedWindow> reduceFn;
     private final Counter droppedDueToClosedWindow;
     private final Counter droppedDueToLateness;
 
@@ -139,7 +138,7 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
 
       Coder<V> valueCoder =
           application.getTransform().getValueCoder(inputBundle.getPCollection().getCoder());
-      reduceFn = SystemReduceFn.buffering(valueCoder);
+      reduceFn = RetractingReduceFn.of(valueCoder);
       droppedDueToClosedWindow = Metrics.counter(GroupAlsoByWindowEvaluator.class,
           GroupAlsoByWindowsAggregators.DROPPED_DUE_TO_CLOSED_WINDOW_COUNTER);
       droppedDueToLateness = Metrics.counter(GroupAlsoByWindowEvaluator.class,
@@ -157,8 +156,7 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
               (PCollection<KV<K, Iterable<V>>>)
                   Iterables.getOnlyElement(application.getOutputs().values()));
       outputBundles.add(bundle);
-      CopyOnAccessInMemoryStateInternals stateInternals =
-          (CopyOnAccessInMemoryStateInternals) stepContext.stateInternals();
+      CopyOnAccessInMemoryStateInternals stateInternals = stepContext.stateInternals();
       DirectTimerInternals timerInternals = stepContext.timerInternals();
       RunnerApi.Trigger runnerApiTrigger =
           TriggerTranslation.toProto(windowingStrategy.getTrigger());
@@ -246,6 +244,16 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
         Collection<? extends BoundedWindow> windows,
         PaneInfo pane) {
       bundle.add(WindowedValue.of(output, timestamp, windows, pane));
+    }
+
+    @Override
+    public void outputRetraction(
+        KV<K, Iterable<V>> output,
+        Instant timestamp,
+        Collection<? extends BoundedWindow> windows,
+        PaneInfo pane) {
+
+      bundle.add(WindowedValue.retractionOf(output, timestamp, windows, pane));
     }
 
     @Override

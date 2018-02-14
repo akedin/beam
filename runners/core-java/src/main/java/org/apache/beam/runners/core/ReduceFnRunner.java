@@ -299,7 +299,7 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
    * of those windows will already have state associated with them. The rest are considered
    * NEW.
    * <li>Use {@link WindowFn#mergeWindows} to attempt to merge currently ACTIVE and NEW windows.
-   * Each NEW window will become either ACTIVE or be discardedL.
+   * Each NEW window will become either ACTIVE or be discarded.
    * (See {@link ActiveWindowSet} for definitions of these terms.)
    * <li>If at all possible, eagerly substitute NEW windows with their ACTIVE state address
    * windows before any state is associated with the NEW window. In the common case that
@@ -572,8 +572,9 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
 
     // Process the element for each (mergeResultWindow, not closed) window it belongs to.
     for (W window : windows) {
-      ReduceFn<K, InputT, OutputT, W>.ProcessValueContext directContext = contextFactory.forValue(
-          window, value.getValue(), value.getTimestamp(), StateStyle.DIRECT);
+      ReduceFn<K, InputT, OutputT, W>.ProcessValueContext directContext =
+          newContext(window, value, StateStyle.DIRECT);
+
       if (triggerRunner.isClosed(directContext.state())) {
         // This window has already been closed.
         droppedDueToClosedWindow.inc();
@@ -586,8 +587,8 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
       }
 
       activeWindows.ensureWindowIsActive(window);
-      ReduceFn<K, InputT, OutputT, W>.ProcessValueContext renamedContext = contextFactory.forValue(
-          window, value.getValue(), value.getTimestamp(), StateStyle.RENAMED);
+      ReduceFn<K, InputT, OutputT, W>.ProcessValueContext renamedContext =
+          newContext(window, value, StateStyle.RENAMED);
 
       nonEmptyPanes.recordContent(renamedContext.state());
       scheduleGarbageCollectionTimer(directContext);
@@ -612,6 +613,21 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
       // cannot take a trigger state from firing to non-firing.
       // (We don't actually assert this since it is too slow.)
     }
+  }
+
+  private ReduceFn<K, InputT, OutputT, W>.ProcessValueContext newContext(
+      W window,
+      WindowedValue<InputT> value,
+      StateStyle stateStyle) {
+
+    return
+        contextFactory
+            .forValue(
+                window,
+                value.getValue(),
+                value.getTimestamp(),
+                value.isRetraction(),
+                stateStyle);
   }
 
   /**
@@ -1028,7 +1044,7 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
               directContext.window(),
               pane,
               StateStyle.RENAMED,
-              toOutput -> {
+              (toOutput, isRetraction) -> {
                 // We're going to output panes, so commit the (now used) PaneInfo.
                 // This is unnecessary if the trigger isFinished since the saved
                 // state will be immediately deleted.
@@ -1037,7 +1053,19 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
                 }
 
                 // Output the actual value.
-                outputter.outputWindowedValue(KV.of(key, toOutput), outputTimestamp, windows, pane);
+                if (isRetraction) {
+                  outputter.outputRetraction(
+                      KV.of(key, toOutput),
+                      outputTimestamp,
+                      windows,
+                      pane);
+                } else {
+                  outputter.outputWindowedValue(
+                      KV.of(key, toOutput),
+                      outputTimestamp,
+                      windows,
+                      pane);
+                }
               });
 
       reduceFn.onTrigger(renamedTriggerContext);

@@ -135,6 +135,15 @@ class SplittableProcessElementsEvaluatorFactory<
           }
 
           @Override
+          public void outputRetraction(
+              OutputT output,
+              Instant timestamp,
+              Collection<? extends BoundedWindow> windows,
+              PaneInfo pane) {
+              throw new UnsupportedOperationException("Retractions are not supported here");
+          }
+
+          @Override
           public <AdditionalOutputT> void outputWindowedValue(
               TupleTag<AdditionalOutputT> tag,
               AdditionalOutputT output,
@@ -143,6 +152,7 @@ class SplittableProcessElementsEvaluatorFactory<
               PaneInfo pane) {
             outputManager.output(tag, WindowedValue.of(output, timestamp, windows, pane));
           }
+
         };
     processFn.setProcessElementInvoker(
         new OutputAndTimeBoundedSplittableProcessElementInvoker<>(

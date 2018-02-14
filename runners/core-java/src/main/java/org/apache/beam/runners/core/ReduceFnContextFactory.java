@@ -19,6 +19,8 @@ package org.apache.beam.runners.core;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.beam.sdk.util.WindowedValue.IS_RETRACTION;
+import static org.apache.beam.sdk.util.WindowedValue.NOT_RETRACTION;
 
 import com.google.common.collect.ImmutableMap;
 import java.util.Collection;
@@ -44,7 +46,7 @@ import org.joda.time.Instant;
  */
 class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
   public interface OnTriggerCallbacks<OutputT> {
-    void output(OutputT toOutput);
+    void output(OutputT toOutput, boolean isRetraction);
   }
 
   private final K key;
@@ -97,8 +99,9 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
   }
 
   public ReduceFn<K, InputT, OutputT, W>.ProcessValueContext forValue(
-      W window, InputT value, Instant timestamp, StateStyle style) {
-    return new ProcessValueContextImpl(stateAccessor(window, style), value, timestamp);
+      W window, InputT value, Instant timestamp, boolean isRetraction, StateStyle style) {
+    return new ProcessValueContextImpl(
+        stateAccessor(window, style), value, timestamp, isRetraction);
   }
 
   public ReduceFn<K, InputT, OutputT, W>.OnTriggerContext forTrigger(W window,
@@ -342,14 +345,19 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
     private final Instant timestamp;
     private final StateAccessorImpl<K, W> state;
     private final TimersImpl timers;
+    private final boolean isRetraction;
 
-    private ProcessValueContextImpl(StateAccessorImpl<K, W> state,
-        InputT value, Instant timestamp) {
+    private ProcessValueContextImpl(
+        StateAccessorImpl<K, W> state,
+        InputT value,
+        Instant timestamp,
+        boolean isRetraction) {
       reduceFn.super();
       this.state = state;
       this.value = value;
       this.timestamp = timestamp;
       this.timers = new TimersImpl(state.namespace());
+      this.isRetraction = isRetraction;
     }
 
     @Override
@@ -385,6 +393,11 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
     @Override
     public Timers timers() {
       return timers;
+    }
+
+    @Override
+    public boolean isRetraction() {
+      return isRetraction;
     }
   }
 
@@ -430,7 +443,12 @@ class ReduceFnContextFactory<K, InputT, OutputT, W extends BoundedWindow> {
 
     @Override
     public void output(OutputT value) {
-      callbacks.output(value);
+      callbacks.output(value, NOT_RETRACTION);
+    }
+
+    @Override
+    public void outputRetraction(OutputT value) {
+      callbacks.output(value, IS_RETRACTION);
     }
 
     @Override

@@ -28,8 +28,15 @@ import org.joda.time.Instant;
  * any tagged output.
  */
 public interface OutputWindowedValue<OutputT> {
+
   /** Outputs a value with windowing information to the main output. */
   void outputWindowedValue(
+      OutputT output,
+      Instant timestamp,
+      Collection<? extends BoundedWindow> windows,
+      PaneInfo pane);
+
+  void outputRetraction(
       OutputT output,
       Instant timestamp,
       Collection<? extends BoundedWindow> windows,

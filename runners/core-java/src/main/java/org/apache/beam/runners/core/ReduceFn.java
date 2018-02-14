@@ -61,6 +61,8 @@ public abstract class ReduceFn<K, InputT, OutputT, W extends BoundedWindow>
 
     /** Return the timestamp associated with the value. */
     public abstract Instant timestamp();
+
+    public abstract boolean isRetraction();
   }
 
   /** Information accessible within {@link #onMerge}. */
@@ -77,6 +79,8 @@ public abstract class ReduceFn<K, InputT, OutputT, W extends BoundedWindow>
 
     /** Output the given value in the current window. */
     public abstract void output(OutputT value);
+
+    public abstract void outputRetraction(OutputT value);
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////

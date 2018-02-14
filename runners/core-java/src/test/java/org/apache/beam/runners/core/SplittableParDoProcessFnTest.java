@@ -254,6 +254,15 @@ public class SplittableParDoProcessFnTest {
     }
 
     @Override
+    public void outputRetraction(
+        OutputT output,
+        Instant timestamp,
+        Collection<? extends BoundedWindow> windows,
+        PaneInfo pane) {
+      throw new UnsupportedOperationException("Retractions are not supported here");
+    }
+
+    @Override
     public <AdditionalOutputT> void outputWindowedValue(
         TupleTag<AdditionalOutputT> tag,
         AdditionalOutputT output,
