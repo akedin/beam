@@ -21,22 +21,23 @@ package org.apache.beam.sdk.extensions.sql;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Objects;
+import java.util.Collections;
+import java.util.List;
 import org.apache.beam.sdk.coders.BigDecimalCoder;
 import org.apache.beam.sdk.coders.BigEndianIntegerCoder;
 import org.apache.beam.sdk.coders.BigEndianLongCoder;
 import org.apache.beam.sdk.coders.ByteCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
-import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.StructuredCoder;
 import org.apache.beam.sdk.values.RowType;
 
 /**
  * Base class for coders for supported SQL types.
  */
-public abstract class SqlTypeCoder extends CustomCoder<Object> {
+public abstract class SqlTypeCoder extends StructuredCoder<Object> {
 
   @Override
   public void encode(Object value, OutputStream outStream) throws CoderException, IOException {
@@ -54,6 +55,11 @@ public abstract class SqlTypeCoder extends CustomCoder<Object> {
   }
 
   protected abstract Coder delegateCoder();
+
+  @Override
+  public List<? extends Coder<?>> getCoderArguments() {
+    return Collections.emptyList();
+  }
 
   @Override
   public boolean equals(Object other) {
@@ -183,17 +189,27 @@ public abstract class SqlTypeCoder extends CustomCoder<Object> {
       return elementCoder;
     }
 
-    @Override
-    public boolean equals(Object other) {
-      return other != null
-             && this.getClass().equals(other.getClass())
-             && this.elementCoder.equals(((SqlArrayCoder) other).elementCoder);
-    }
+//    @Override
+//    public List<? extends Coder<?>> getCoderArguments() {
+//      return Collections.singletonList(ListCoder.of(elementCoder));
+//    }
 
     @Override
-    public int hashCode() {
-      return Objects.hashCode(elementCoder);
+    public List<? extends Coder<?>> getComponents() {
+      return Collections.singletonList(elementCoder);
     }
+
+    //    @Override
+//    public boolean equals(Object other) {
+//      return other != null
+//             && this.getClass().equals(other.getClass())
+//             && this.elementCoder.equals(((SqlArrayCoder) other).elementCoder);
+//    }
+//
+//    @Override
+//    public int hashCode() {
+//      return Objects.hashCode(elementCoder);
+//    }
   }
 
   /**
@@ -221,14 +237,24 @@ public abstract class SqlTypeCoder extends CustomCoder<Object> {
     }
 
     @Override
-    public boolean equals(Object other) {
-      return other instanceof SqlRowCoder
-             && Objects.equals(this.rowType, ((SqlRowCoder) other).rowType);
+    public List<? extends Coder<?>> getComponents() {
+      return Collections.singletonList(rowType.getRowCoder());
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(this.rowType);
-    }
+    //    @Override
+//    public List<? extends Coder<?>> getCoderArguments() {
+//      return Collections.singletonList(rowType.getRowCoder());
+//    }
+//
+//    @Override
+//    public boolean equals(Object other) {
+//      return other instanceof SqlRowCoder
+//             && Objects.equals(this.rowType, ((SqlRowCoder) other).rowType);
+//    }
+//
+//    @Override
+//    public int hashCode() {
+//      return Objects.hashCode(this.rowType);
+//    }
   }
 }

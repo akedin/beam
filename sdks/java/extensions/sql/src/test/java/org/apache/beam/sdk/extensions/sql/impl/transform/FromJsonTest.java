@@ -17,10 +17,17 @@
  */
 package org.apache.beam.sdk.extensions.sql.impl.transform;
 
+import static org.apache.beam.sdk.values.RowType.newField;
+import static org.apache.beam.sdk.values.RowType.toRowType;
+import static org.hamcrest.core.Is.isA;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.Serializable;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Stream;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.extensions.sql.RowSqlType;
 import org.apache.beam.sdk.extensions.sql.SqlTypeCoders;
 import org.apache.beam.sdk.testing.PAssert;
@@ -176,5 +183,191 @@ public class FromJsonTest implements Serializable {
         .containsInAnyOrder(row1, row2);
 
     pipeline.run();
+  }
+
+  @Test
+  public void testThrowsForInvalidJson() throws Exception {
+    String invalidJson =
+        OBJECT_MAPPER
+            .writeValueAsString(new SubPojo("subpojo 1", 1.2))
+            .substring(0, 10);
+
+    PCollection<String> input = pipeline.apply(Create.of(invalidJson));
+
+    thrown.expectCause(isA(IllegalArgumentException.class));
+    thrown.expectMessage("Unable to convert JSON");
+    thrown.expectMessage(invalidJson);
+
+    input.apply(FromJson.toRow(SUBPOJO_ROW_TYPE));
+
+    pipeline.run();
+  }
+
+  @Test
+  public void testThrowsForMissingField() throws Exception {
+    String missingField =
+        OBJECT_MAPPER
+            .writeValueAsString(new SubPojo("subpojo 1", 1.2))
+            .replace("description", "totallyNotDescription");
+
+    PCollection<String> input = pipeline.apply(Create.of(missingField));
+
+    thrown.expectCause(isA(IllegalArgumentException.class));
+    thrown.expectMessage("description");
+    thrown.expectMessage("not present");
+
+    input.apply(FromJson.toRow(SUBPOJO_ROW_TYPE));
+
+    pipeline.run();
+  }
+
+  @Test
+  public void testPerformsTypeCoercionForPrimitiveTypes() throws Exception {
+    String mismatchedType =
+        OBJECT_MAPPER
+            .writeValueAsString(new SubPojo("stringValue", 1.2))
+            .replace("\"stringValue\"", "42")
+            .replace("1.2", "\"anotherStringValue\"");
+
+    PCollection<String> input = pipeline.apply(Create.of(mismatchedType));
+
+    PCollection<Row> output = input.apply(FromJson.toRow(SUBPOJO_ROW_TYPE));
+
+    PAssert
+        .that(output)
+        .containsInAnyOrder(
+            Row
+                .withRowType(SUBPOJO_ROW_TYPE)
+                .addValues("42", 0.0d)
+                .build());
+
+    pipeline.run();
+  }
+
+
+
+  @Test
+  public void testThrowsForMismatchedRowField() throws Exception {
+
+    String json = OBJECT_MAPPER.writeValueAsString(
+        new Pojo(1,
+                 "name1",
+                 null,
+                 Arrays.asList(
+                     new SubPojo("description 1.1", 3.3),
+                     new SubPojo("description 1.2", 4.3)),
+                 Arrays.asList("pink", "magenta")))
+        .replace("null", "32");
+
+    PCollection<String> input = pipeline.apply(Create.of(json));
+
+    thrown.expectCause(isA(IllegalArgumentException.class));
+    thrown.expectMessage("Expected JSON object");
+    thrown.expectMessage("NUMBER");
+
+    input.apply(FromJson.toRow(POJO_ROW_TYPE));
+
+    pipeline.run();
+  }
+
+  @Test
+  public void testThrowsForMismatchedArrayField() throws Exception {
+    String json =
+        OBJECT_MAPPER
+            .writeValueAsString(
+                new Pojo(
+                    1,
+                    "name1",
+                    new SubPojo("subpojo", 32.32),
+                    Arrays.asList(
+                        new SubPojo("description 1.1", 3.3), new SubPojo("description 1.2", 4.3)),
+                    Collections.emptyList()))
+            .replace("[]", "32");
+
+    PCollection<String> input = pipeline.apply(Create.of(json));
+
+    thrown.expectCause(isA(IllegalArgumentException.class));
+    thrown.expectMessage("Expected array");
+    thrown.expectMessage("NUMBER");
+
+    input.apply(FromJson.toRow(POJO_ROW_TYPE));
+
+    pipeline.run();
+  }
+
+  @Test
+  public void testThrowsForNonObjectTopLevel() throws Exception {
+    String invalidJson = OBJECT_MAPPER.writeValueAsString(new String[] { "str", "arr"});
+
+    PCollection<String> input = pipeline.apply(Create.of(invalidJson));
+
+    thrown.expectCause(isA(IllegalArgumentException.class));
+    thrown.expectMessage("Expected JSON object");
+    thrown.expectMessage("ARRAY");
+
+    input.apply(FromJson.toRow(SUBPOJO_ROW_TYPE));
+
+    pipeline.run();
+  }
+
+  @Test
+  public void testThrowsForNonSqlCoder() throws Exception {
+    thrown.expect(IllegalArgumentException.class);
+    thrown.expectMessage("SqlTypeCoders are supported");
+
+    FromJson.toRow(
+        Stream.of(newField("field", StringUtf8Coder.of())).collect(toRowType()));
+  }
+
+  @Test
+  public void testThrowsForNonSqlCoderInNestedRow() throws Exception {
+    thrown.expect(IllegalArgumentException.class);
+    thrown.expectMessage("SqlTypeCoders are supported");
+
+    FromJson.toRow(
+        Stream.of(newField(
+            "rowField",
+            SqlTypeCoders.rowOf(
+                Stream.of(newField(
+                    "nestedField", StringUtf8Coder.of()))
+                      .collect(toRowType())))).collect(toRowType()));
+  }
+
+  @Test
+  public void testThrowsForUnsupportedSqlCoder() throws Exception {
+    thrown.expect(IllegalArgumentException.class);
+    thrown.expectMessage("does not support");
+    thrown.expectMessage("SqlTimestampCoder");
+
+    FromJson
+        .toRow(
+            Stream.of(newField("field", SqlTypeCoders.TIMESTAMP)).collect(toRowType()));
+  }
+
+  @Test
+  public void testThrowsForUnsupportedSqlCoderInNestedRow() throws Exception {
+    thrown.expect(IllegalArgumentException.class);
+    thrown.expectMessage("does not support");
+    thrown.expectMessage("SqlTimestampCoder");
+
+    FromJson.toRow(
+        Stream.of(newField(
+            "rowField",
+            SqlTypeCoders.rowOf(
+                Stream.of(newField(
+                    "nestedField", SqlTypeCoders.TIMESTAMP))
+                      .collect(toRowType())))).collect(toRowType()));
+  }
+
+  @Test
+  public void testThrowsForUnsupportedSqlCoderInArray() throws Exception {
+    thrown.expect(IllegalArgumentException.class);
+    thrown.expectMessage("does not support");
+    thrown.expectMessage("SqlTimestampCoder");
+
+    FromJson.toRow(
+        Stream.of(newField(
+            "arrayField",
+            SqlTypeCoders.arrayOf(SqlTypeCoders.TIMESTAMP))).collect(toRowType()));
   }
 }

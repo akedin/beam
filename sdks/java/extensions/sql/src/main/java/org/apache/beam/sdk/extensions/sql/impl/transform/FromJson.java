@@ -45,7 +45,7 @@ import org.apache.beam.sdk.values.RowType;
 public final class FromJson extends PTransform<PCollection<? extends String>, PCollection<Row>> {
 
   private static final ObjectMapper DEFAULT_MAPPER = new ObjectMapper();
-  private static final Map<SqlTypeCoder, Function<JsonNode, ?>> VALUE_GETTERS =
+  private static final Map<SqlTypeCoder, Function<JsonNode, ?>> PRIMITIVE_TYPE_GETTERS =
       ImmutableMap
           .<SqlTypeCoder, Function<JsonNode, ?>>builder()
           .put(SqlTypeCoders.TINYINT, node -> (byte) node.asInt())
@@ -99,7 +99,9 @@ public final class FromJson extends PTransform<PCollection<? extends String>, PC
   }
 
   private static void verifyFieldCoderSupported(Coder coder) {
-    checkArgument(coder instanceof SqlTypeCoder);
+    checkArgument(coder instanceof SqlTypeCoder,
+                  coder.getClass().getSimpleName()
+                  + " is not supported. Only SqlTypeCoders are supported");
     SqlTypeCoder fieldCoder = (SqlTypeCoder) coder;
 
     if (SqlTypeCoders.isRow(fieldCoder)) {
@@ -113,7 +115,7 @@ public final class FromJson extends PTransform<PCollection<? extends String>, PC
       return;
     }
 
-    if (!VALUE_GETTERS.containsKey(fieldCoder)) {
+    if (!PRIMITIVE_TYPE_GETTERS.containsKey(fieldCoder)) {
       throw new IllegalArgumentException(
           "ToRow transform does not support Row fields of type "
           + fieldCoder.getClass().getSimpleName());
@@ -161,7 +163,7 @@ public final class FromJson extends PTransform<PCollection<? extends String>, PC
     return
         IntStream
             .range(0, targetRowType.getFieldCount())
-            .mapToObj(i -> getFieldValue(jsonNode, targetRowType, i))
+            .mapToObj(fieldIndex -> getFieldValue(jsonNode, targetRowType, fieldIndex))
             .collect(Row.toRow(targetRowType));
   }
 
@@ -207,11 +209,7 @@ public final class FromJson extends PTransform<PCollection<? extends String>, PC
               ((SqlRowCoder) currentFieldType).getRowType());
     }
 
-    return
-        getPrimitiveValue(
-            currentValueNode,
-            currentFieldName,
-            currentFieldType);
+    return PRIMITIVE_TYPE_GETTERS.get(currentFieldType).apply(currentValueNode);
   }
 
   private static Object arrayNodeToList(
@@ -234,20 +232,5 @@ public final class FromJson extends PTransform<PCollection<? extends String>, PC
                               currentArrayFieldName + "[" + i + "]",
                               arrayCoder.getElementCoder()))
             .collect(toList());
-  }
-
-  private static Object getPrimitiveValue(
-      JsonNode jsonNode,
-      String fieldName,
-      SqlTypeCoder rowFieldType) {
-
-    try {
-      return VALUE_GETTERS.get(rowFieldType).apply(jsonNode);
-    } catch (RuntimeException e) {
-      throw new IllegalArgumentException(
-          "Unable to get value from field '" + fieldName
-          + "'. Expected type " + rowFieldType.getClass().getSimpleName()
-          + ". JSON node is of " + jsonNode.getNodeType().name(), e);
-    }
   }
 }
