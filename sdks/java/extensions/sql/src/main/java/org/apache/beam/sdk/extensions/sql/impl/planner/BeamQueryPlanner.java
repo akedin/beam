@@ -51,6 +51,7 @@ import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
+import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
@@ -102,10 +103,18 @@ public class BeamQueryPlanner {
             .context(Contexts.EMPTY_CONTEXT)
             .ruleSets(BeamRuleSets.getRuleSets(sqlEnv))
             .costFactory(null)
+            .sqlToRelConverterConfig(
+                SqlToRelConverter
+                    .configBuilder()
+                    .withExpand(false)
+                    .withConvertTableAccess(false)
+                    .withTrimUnusedFields(false)
+                    .withDecorrelationEnabled(false)
+                    .build())
             .typeSystem(BeamRelDataTypeSystem.BEAM_REL_DATATYPE_SYSTEM)
             .operatorTable(new ChainedSqlOperatorTable(sqlOperatorTables))
             .build();
-    this.planner = Frameworks.getPlanner(config);
+    this.planner = new BeamPlannerImpl(config); //Frameworks.getPlanner(config);
 
     for (String t : schema.getTableNames()) {
       sourceTables.put(t, (BaseBeamTable) schema.getTable(t));

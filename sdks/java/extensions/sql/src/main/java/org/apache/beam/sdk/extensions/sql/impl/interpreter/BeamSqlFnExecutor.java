@@ -200,7 +200,7 @@ public class BeamSqlFnExecutor implements BeamSqlExpressionExecutor {
       }
     } else if (rexNode instanceof RexInputRef) {
       RexInputRef node = (RexInputRef) rexNode;
-      ret = new BeamSqlInputRefExpression(node.getType().getSqlTypeName(), node.getIndex());
+        ret = new BeamSqlInputRefExpression(node.getType().getSqlTypeName(), node.getIndex());
     } else if (rexNode instanceof RexFieldAccess) {
       RexFieldAccess fieldAccessNode = (RexFieldAccess) rexNode;
       BeamSqlExpression referenceExpression = buildExpression(fieldAccessNode.getReferenceExpr());

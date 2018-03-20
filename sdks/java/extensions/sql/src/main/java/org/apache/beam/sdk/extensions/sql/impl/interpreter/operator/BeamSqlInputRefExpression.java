@@ -39,7 +39,8 @@ public class BeamSqlInputRefExpression extends BeamSqlExpression {
 
   @Override
   public BeamSqlPrimitive evaluate(Row inputRow, BoundedWindow window) {
-    return BeamSqlPrimitive.of(outputType, inputRow.getValue(inputRef));
+    Object value = inputRow.getValue(inputRef);
+    return BeamSqlPrimitive.of(outputType, value);
   }
 
   public int getInputRef() {

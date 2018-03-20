@@ -17,6 +17,8 @@
  */
 package org.apache.beam.sdk.extensions.sql;
 
+import static java.util.Arrays.asList;
+
 import org.apache.beam.sdk.extensions.sql.impl.transform.FromJson;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -70,6 +72,14 @@ public class BeamSqlJsonTest {
       + "    \"tags\" : [\"red\", \"car\"] },\n"
       + "  { \"sku\" : \"sku5\", \"price\" : 2, \"currency\" : \"USD\",\n"
       + "    \"tags\" : [\"green\", \"box\"]}\n"
+      + "]}\n";
+
+  private static final String order5 =
+      "{ \"orderId\" : 5,\n"
+      + "\"person\" : { \"name\" : \"foobar\", \"personId\" : 3},\n"
+      + "\"items\": [\n"
+      + "  { \"sku\" : \"sku17\", \"price\" : 2, \"currency\" : \"USD\",\n"
+      + "    \"tags\" : [\"clear\", \"circle\"]}\n"
       + "]}\n";
 
   private static final RowType ITEM_TYPE =
@@ -126,7 +136,7 @@ public class BeamSqlJsonTest {
   public void testSelectTopLevelObjectField() {
     PCollection<String> input =
         pipeline
-            .apply(Create.of(order1, order2, order3, order4));
+            .apply(Create.of(order1, order2, order3, order4, order5));
 
     PCollection<Row> output =
         input
@@ -139,7 +149,51 @@ public class BeamSqlJsonTest {
             Row.withRowType(PERSON_TYPE).addValues("john", 12).build(),
             Row.withRowType(PERSON_TYPE).addValues("jane", 2).build(),
             Row.withRowType(PERSON_TYPE).addValues("john", 12).build(),
-            Row.withRowType(PERSON_TYPE).addValues("jane", 2).build());
+            Row.withRowType(PERSON_TYPE).addValues("jane", 2).build(),
+            Row.withRowType(PERSON_TYPE).addValues("foobar", 3).build());
+
+    pipeline.run().waitUntilFinish();
+  }
+
+  @Test
+  public void testSelectTopLevelArrayField() {
+    RowType outputType = RowSqlType.builder().withArrayField("array", ITEM_TYPE).build();
+
+    PCollection<String> input =
+        pipeline
+            .apply(Create.of(order1, order2, order3, order4, order5));
+
+    PCollection<Row> output =
+        input
+            .apply(FromJson.toRow(ORDER_TYPE))
+            .apply(BeamSql.query("SELECT items FROM PCOLLECTION"));
+
+    PAssert
+        .that(output)
+        .containsInAnyOrder(
+            Row.withRowType(outputType).addArray(
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku1", 2, "USD", asList("blue", "book")).build(),
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku2", 13, "EUR", asList("red", "car")).build(),
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku3", 14, "USD", asList("green", "box")).build()).build(),
+            Row.withRowType(outputType).addArray(
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku3", 1, "EUR", asList("red", "car")).build(),
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku1", 4, "USD", asList("green", "box")).build()).build(),
+            Row.withRowType(outputType).addArray(
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku2", 5, "USD", asList("blue", "book")).build()).build(),
+            Row.withRowType(outputType).addArray(
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku1", 6, "EUR", asList("red", "car")).build(),
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku5", 2, "USD", asList("green", "box")).build()).build(),
+            Row.withRowType(outputType).addArray(
+                Row.withRowType(ITEM_TYPE)
+                   .addValues("sku17", 2, "USD", asList("clear", "circle")).build()).build());
 
     pipeline.run().waitUntilFinish();
   }
@@ -150,7 +204,7 @@ public class BeamSqlJsonTest {
 
     PCollection<String> input =
         pipeline
-            .apply(Create.of(order1, order2, order3, order4));
+            .apply(Create.of(order1, order2, order3, order4, order5));
 
     PCollection<Row> output =
         input
@@ -163,31 +217,59 @@ public class BeamSqlJsonTest {
             Row.withRowType(outputType).addValues("john").build(),
             Row.withRowType(outputType).addValues("jane").build(),
             Row.withRowType(outputType).addValues("john").build(),
-            Row.withRowType(outputType).addValues("jane").build());
+            Row.withRowType(outputType).addValues("jane").build(),
+            Row.withRowType(outputType).addValues("foobar").build());
 
     pipeline.run().waitUntilFinish();
   }
 
   @Test
-  public void testSelectTopLevelArrayField() {
-    RowType outputType = RowSqlType.builder().withVarcharField("name").build();
+  public void testSelectElementFromTopLevelArrayField() {
+    RowType outputType = RowSqlType.builder().withArrayField("array", ITEM_TYPE).build();
 
     PCollection<String> input =
         pipeline
-            .apply(Create.of(order1, order2, order3, order4));
+            .apply(Create.of(order1, order2, order3, order4, order5));
 
     PCollection<Row> output =
         input
             .apply(FromJson.toRow(ORDER_TYPE))
-            .apply(BeamSql.query("SELECT PCOLLECTION.person.name FROM PCOLLECTION"));
+            .apply(BeamSql.query("SELECT `PCOLLECTION`.`items`[0] FROM PCOLLECTION"));
 
     PAssert
         .that(output)
         .containsInAnyOrder(
-            Row.withRowType(outputType).addValues("john").build(),
-            Row.withRowType(outputType).addValues("jane").build(),
-            Row.withRowType(outputType).addValues("john").build(),
-            Row.withRowType(outputType).addValues("jane").build());
+            Row.withRowType(ITEM_TYPE).addValues("sku1", 2, "USD", asList("blue", "book")).build(),
+            Row.withRowType(ITEM_TYPE).addValues("sku3", 1, "EUR", asList("red", "car")).build(),
+            Row.withRowType(ITEM_TYPE).addValues("sku2", 5, "USD", asList("blue", "book")).build(),
+            Row.withRowType(ITEM_TYPE).addValues("sku1", 6, "EUR", asList("red", "car")).build(),
+            Row.withRowType(ITEM_TYPE).addValues("sku17", 2, "USD", asList("clear", "circle")).build());
+
+    pipeline.run().waitUntilFinish();
+  }
+
+  @Test
+  public void testBasicAggregationOnTopLevelField() {
+    RowType outputType = RowSqlType.builder().withBigIntField("count").build();
+
+    PCollection<String> input =
+        pipeline
+            .apply(Create.of(order1, order2, order3, order4, order5));
+
+    PCollection<Row> output =
+        input
+            .apply(FromJson.toRow(ORDER_TYPE))
+            .apply(BeamSql.query(
+                "SELECT COUNT(PCOLLECTION.person.name) "
+                + "FROM PCOLLECTION "
+                + "GROUP BY PCOLLECTION.person.name"));
+
+    PAssert
+        .that(output)
+        .containsInAnyOrder(
+            Row.withRowType(outputType).addValues(2L).build(),
+            Row.withRowType(outputType).addValues(2L).build(),
+            Row.withRowType(outputType).addValues(1L).build());
 
     pipeline.run().waitUntilFinish();
   }
